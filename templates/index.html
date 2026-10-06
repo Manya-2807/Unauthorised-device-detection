@@ -1,65 +1,169 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Device Detection System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
 <body>
+<div class="page-shell">
+    <header class="hero">
+        <div>
+            <p class="eyebrow">NETWORK SECURITY DASHBOARD</p>
+            <h1>Unauthorized Device Detection</h1>
+            <p class="subtitle">
+                Discover devices on the current network and automatically trust
+                this computer and its network gateway.
+            </p>
+        </div>
 
-<h1>Unauthorized Device Detection System</h1>
-
-<p>Network Security Dashboard</p>
-
-<form action="/scan" method="get">
-    <button type="submit">Scan Network</button>
-</form>
-
-{% if message %}
-<p><strong>{{ message }}</strong></p>
-{% endif %}
-
-<h2>Detected Devices</h2>
-
-<table border="1" cellpadding="10">
-
-<tr>
-    <th>Device Name</th>
-    <th>IP Address</th>
-    <th>MAC Address</th>
-    <th>Status</th>
-    <th>AI Analysis</th>
-    <th>Action</th>
-</tr>
-
-{% for device in devices %}
-<tr>
-    <td>{{ device.name }}</td>
-    <td>{{ device.ip }}</td>
-    <td>{{ device.mac }}</td>
-    <td>{{ device.status }}</td>
-    <td>{{ device.ai }}</td>
-    <td>
-        {% if device.status == "Unauthorized" %}
-        <form action="/block/{{ device.mac }}" method="post">
-            <button type="submit">Block</button>
+        <form action="/scan" method="get" id="scan-form">
+            <button class="scan-button" type="submit" id="scan-button">
+                <span id="scan-label">Scan Network</span>
+            </button>
         </form>
-        {% elif device.status == "Blocked" %}
-        Blocked
+    </header>
+
+    <section class="network-grid">
+        <div class="info-card">
+            <span class="card-label">This Device</span>
+            <strong>{{ local_ip or "Not detected" }}</strong>
+        </div>
+
+        <div class="info-card">
+            <span class="card-label">Network Gateway</span>
+            <strong>{{ gateway_ip or "Not detected" }}</strong>
+        </div>
+
+        <div class="info-card">
+            <span class="card-label">Scanned Network</span>
+            <strong>{{ network or "Not detected" }}</strong>
+        </div>
+    </section>
+
+    {% if scanned %}
+    <section class="summary-grid">
+        <div class="summary-card">
+            <span>Authorized</span>
+            <strong>{{ authorized_count }}</strong>
+        </div>
+        <div class="summary-card">
+            <span>Unauthorized</span>
+            <strong>{{ unauthorized_count }}</strong>
+        </div>
+        <div class="summary-card">
+            <span>Blocked</span>
+            <strong>{{ blocked_count }}</strong>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">LIVE RESULTS</p>
+                <h2>Detected Devices</h2>
+            </div>
+
+            {% if scanned %}
+            <span class="scan-complete">Scan complete</span>
+            {% endif %}
+        </div>
+
+        {% if devices %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Device</th>
+                        <th>IP Address</th>
+                        <th>MAC Address</th>
+                        <th>Status</th>
+                        <th>Analysis</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                {% for device in devices %}
+                    <tr>
+                        <td>
+                            <div class="device-cell">
+                                <span class="device-icon">
+                                    {% if device.name == "This Device" %}💻
+                                    {% elif device.name == "Network Gateway" %}📡
+                                    {% else %}📱{% endif %}
+                                </span>
+                                <strong>{{ device.name }}</strong>
+                            </div>
+                        </td>
+                        <td>{{ device.ip }}</td>
+                        <td><code>{{ device.mac }}</code></td>
+                        <td>
+                            <span class="badge badge-{{ device.status|lower }}">
+                                {{ device.status }}
+                            </span>
+                        </td>
+                        <td>{{ device.analysis }}</td>
+                        <td>
+                            {% if device.status == "Unauthorized" %}
+                            <form action="/block/{{ device.mac }}/{{ device.ip }}" method="post">
+                                <button class="action-button block-button" type="submit">
+                                    Block
+                                </button>
+                            </form>
+                            {% elif device.status == "Blocked" %}
+                            <form action="/unblock/{{ device.mac }}" method="post">
+                                <button class="action-button unblock-button" type="submit">
+                                    Unblock
+                                </button>
+                            </form>
+                            {% else %}
+                            <span class="trusted-text">Trusted</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% elif scanned %}
+        <div class="empty-state">
+            <div class="empty-icon">⌁</div>
+            <h3>No additional visible devices found</h3>
+            <p>
+                The computer and gateway may be the only visible devices.
+                Some mobile hotspots isolate clients from each other.
+            </p>
+        </div>
         {% else %}
-        -
+        <div class="empty-state">
+            <div class="empty-icon">⌁</div>
+            <h3>Ready to scan</h3>
+            <p>Press <strong>Scan Network</strong> to discover visible devices.</p>
+        </div>
         {% endif %}
-    </td>
-</tr>
-{% endfor %}
+    </section>
 
-</table>
+    <div class="notice">
+        <strong>Demo blocking:</strong>
+        the Block button changes the device state inside this dashboard.
+        A future router/access-point integration can connect the same action to real network controls.
+    </div>
+</div>
 
-<p>
-    <small>
-        Block marks an unauthorized device as blocked in this dashboard.
-        Disconnecting another device from Wi-Fi requires control of the router or hotspot.
-    </small>
-</p>
+<script>
+    const form = document.getElementById("scan-form");
+    const button = document.getElementById("scan-button");
+    const label = document.getElementById("scan-label");
 
+    form.addEventListener("submit", () => {
+        button.disabled = true;
+        button.classList.add("scanning");
+        label.textContent = "Scanning…";
+    });
+</script>
 </body>
 </html>
