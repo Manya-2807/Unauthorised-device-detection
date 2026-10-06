@@ -1,46 +1,43 @@
 # Unauthorized Device Detection System
 
-A simple Flask-based Computer Networks project that actively probes the local network, reads the ARP table, and classifies detected devices as authorized or unauthorized using their MAC addresses.
+A simple Flask-based Computer Networks project that discovers visible devices on the current local network and automatically classifies them by role.
 
-## What the Project Does
+## Automatic Authorization Logic
 
-When **Scan Network** is clicked:
+The project no longer depends on hardcoded MAC addresses.
 
-1. The app determines the Mac/PC's current local IP address.
-2. It actively probes the current /24 local subnet.
-3. The operating system learns reachable neighboring devices.
-4. The app reads the ARP table.
-5. Each MAC address is normalized.
-6. Known MAC addresses are marked **Authorized / Normal**.
-7. Other detected MAC addresses are marked **Unauthorized / Anomalous**.
-8. Unauthorized devices get a **Block** button.
+On every computer where the app runs:
 
-## Trusted Devices
+- **This Device** — the computer running Flask — is automatically **Authorized**.
+- **Network Gateway** — the router or hotspot providing the connection — is automatically **Authorized**.
+- **Every other visible device** is classified as **Unauthorized**.
+- Unauthorized devices receive a demo **Block** option.
 
-Trusted devices are defined in `app.py`:
+This makes the same project portable across macOS, Windows, Linux, iPhone hotspots, Android hotspots, and normal Wi-Fi routers without editing trusted-device MAC addresses.
 
-```python
-AUTHORIZED_DEVICES = {
-    "dc-a9-04-93-aa-73": "My MacBook",
-    "fa-4e-73-4e-d4-64": "Personal Hotspot"
-}
-```
+## How Scan Network Works
 
-Add another known device by adding its normalized MAC address and a name.
+1. Detect the current device's local IP address.
+2. Detect the network's default gateway.
+3. Probe the current /24 local subnet.
+4. Read the operating system ARP table.
+5. Compare each discovered IP with the local host and gateway.
+6. Classify devices as Authorized, Unauthorized, or Blocked.
+7. Display results in the Flask dashboard.
+
+## Demo Blocking
+
+The **Block** button intentionally simulates blocking inside the dashboard.
+
+It changes the selected third-party device to **Blocked** and offers an **Unblock** button.
+
+A future version can connect this same UI action to a router/access-point API or firewall management system for real network enforcement.
 
 ## Important Network Limitation
 
-The app can discover only devices that are visible from the computer running Flask.
+The project can discover only devices that are visible from the computer running Flask.
 
-A normal Wi-Fi router/LAN usually allows much better local discovery.
-
-Some mobile hotspots, including Personal Hotspot configurations, can isolate connected clients from one another. In that case another phone may be connected to the hotspot but still remain invisible to the Mac. A Flask application running on the Mac cannot override that hotspot isolation.
-
-## About the Block Button
-
-The **Block** button currently marks the device as blocked inside the dashboard.
-
-It does not disconnect that device from the Wi-Fi network. Actual Wi-Fi disconnection requires administrative control of the router/access point or hotspot. The specific implementation depends on the router/hotspot platform.
+A normal Wi-Fi LAN usually gives better peer visibility. Some mobile hotspots isolate connected clients. If a hotspot hides one client from another, that device may not appear even though it is connected. Client isolation is controlled by the hotspot/router and cannot be overridden by this Flask application.
 
 ## Project Structure
 
@@ -50,6 +47,8 @@ Unauthorised-device-detection/
 ├── app.py
 ├── README.md
 ├── requirements.txt
+├── static/
+│   └── style.css
 └── templates/
     └── index.html
 ```
@@ -78,18 +77,18 @@ Then open:
 https://127.0.0.1:5000
 ```
 
-A browser certificate warning is expected because the local Flask server uses a self-signed development certificate.
+A browser certificate warning is expected because Flask is using a local self-signed development certificate.
 
 ## Main Technologies
 
 - Python
 - Flask
-- HTML
+- HTML/CSS
 - ARP
-- ICMP/ping-based local discovery
-- Regular expressions
-- MAC-address allowlisting
+- ICMP/ping-based LAN discovery
+- Default-gateway discovery
+- Role-based device authorization
 
 ## Purpose
 
-This project demonstrates local-network device discovery and simple allowlist-based unauthorized-device detection for a Computer Networks project.
+This project demonstrates local-network discovery, simple automatic authorization, unauthorized-device identification, and a simulated response workflow for a Computer Networks project.
