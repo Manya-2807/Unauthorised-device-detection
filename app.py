@@ -3,18 +3,13 @@ import concurrent.futures
 import ipaddress
 import platform
 import re
+import socket
 import subprocess
+import uuid
 
 app = Flask(__name__)
 
-# Trusted devices
-AUTHORIZED_DEVICES = {
-    "dc-a9-04-93-aa-73": "My MacBook",
-    "fa-4e-73-4e-d4-64": "Personal Hotspot"
-}
-
-# Devices blocked inside this demo dashboard.
-# This resets when Flask restarts.
+# Demo-only blocked devices. This resets when Flask restarts.
 BLOCKED_DEVICES = set()
 
 
@@ -29,72 +24,86 @@ def normalize_mac(mac):
 
 
 def get_local_ip():
+    # Cross-platform way to find the IP used for the current network route.
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("8.8.8.8", 80))
+        ip = sock.getsockname()[0]
+        sock.close()
+        return ip
+    except OSError:
+        return None
+
+
+def get_local_mac():
+    value = uuid.getnode()
+    return "-".join(f"{(value >> shift) & 0xff:02x}" for shift in range(40, -1, -8))
+
+
+def get_gateway_ip():
     system = platform.system()
 
-    if system == "Darwin":
-        try:
-            route = subprocess.check_output(
+    try:
+        if system == "Darwin":
+            output = subprocess.check_output(
                 ["route", "-n", "get", "default"],
                 text=True,
                 errors="ignore"
             )
-            interface_match = re.search(r"interface:\s+(\S+)", route)
+            match = re.search(r"gateway:\s+(\d+\.\d+\.\d+\.\d+)", output)
+            return match.group(1) if match else None
 
-            if interface_match:
-                interface = interface_match.group(1)
-                ip = subprocess.check_output(
-                    ["ipconfig", "getifaddr", interface],
-                    text=True,
-                    errors="ignore"
-                ).strip()
-
-                if ip:
-                    return ip
-        except subprocess.CalledProcessError:
-            pass
-
-    if system == "Windows":
-        try:
+        if system == "Windows":
             output = subprocess.check_output(
                 ["ipconfig"],
                 text=True,
                 errors="ignore"
             )
             matches = re.findall(
-                r"IPv4 Address[^:]*:\s*(\d+\.\d+\.\d+\.\d+)",
+                r"Default Gateway[^:]*:\s*(\d+\.\d+\.\d+\.\d+)",
                 output
             )
-            for ip in matches:
-                if not ip.startswith("127."):
-                    return ip
-        except subprocess.CalledProcessError:
-            pass
+            return matches[0] if matches else None
 
-    return None
+        # Linux and other Unix-like systems
+        output = subprocess.check_output(
+            ["ip", "route", "show", "default"],
+            text=True,
+            errors="ignore"
+        )
+        match = re.search(r"default via\s+(\d+\.\d+\.\d+\.\d+)", output)
+        return match.group(1) if match else None
+
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
 
 
 def ping_host(ip):
     system = platform.system()
 
     if system == "Windows":
-        command = ["ping", "-n", "1", "-w", "250", str(ip)]
+        command = ["ping", "-n", "1", "-w", "300", str(ip)]
+    elif system == "Darwin":
+        command = ["ping", "-c", "1", "-W", "300", str(ip)]
     else:
-        command = ["ping", "-c", "1", "-W", "250", str(ip)]
+        command = ["ping", "-c", "1", "-W", "1", str(ip)]
 
-    subprocess.run(
-        command,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
+    try:
+        subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=1.5
+        )
+    except subprocess.TimeoutExpired:
+        pass
 
 
-def discover_network():
-    local_ip = get_local_ip()
-
+def discover_network(local_ip):
     if not local_ip:
         return None
 
-    # Keep the project simple: scan the current /24 network.
+    # Simple project assumption: scan the current /24 LAN.
     network = ipaddress.ip_network(f"{local_ip}/24", strict=False)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=64) as executor:
@@ -103,103 +112,147 @@ def discover_network():
     return str(network)
 
 
-def read_arp_devices():
-    devices = []
+def read_arp_entries():
+    entries = []
 
-    result = subprocess.check_output(
-        ["arp", "-a"],
-        text=True,
-        errors="ignore"
-    )
+    try:
+        result = subprocess.check_output(
+            ["arp", "-a"],
+            text=True,
+            errors="ignore"
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return entries
 
     for line in result.splitlines():
-        # Supports both macOS and Windows ARP output
-        m = re.search(
+        # macOS/Linux example:
+        # ? (192.168.1.10) at aa:bb:cc:dd:ee:ff ...
+        # Windows example:
+        # 192.168.1.10    aa-bb-cc-dd-ee-ff    dynamic
+        match = re.search(
             r"\(?(\d+\.\d+\.\d+\.\d+)\)?(?:\s+at)?\s+([a-fA-F0-9:-]{11,17})",
             line
         )
 
-        if not m:
+        if not match:
             continue
 
-        ip = m.group(1)
-        mac = normalize_mac(m.group(2))
+        ip = match.group(1)
+        mac = normalize_mac(match.group(2))
 
-        # Ignore broadcast and multicast addresses
         if ip.startswith(("224.", "239.", "255.")):
             continue
 
         if mac == "ff-ff-ff-ff-ff-ff":
             continue
 
-        if mac in AUTHORIZED_DEVICES:
-            name = AUTHORIZED_DEVICES[mac]
+        entries.append({"ip": ip, "mac": mac})
+
+    return entries
+
+
+def build_device_list(local_ip, gateway_ip):
+    devices = []
+    seen_ips = set()
+
+    for entry in read_arp_entries():
+        ip = entry["ip"]
+        mac = entry["mac"]
+
+        if ip == local_ip:
+            name = "This Device"
             status = "Authorized"
-            ai = "Normal"
+            analysis = "Trusted host"
+        elif ip == gateway_ip:
+            name = "Network Gateway"
+            status = "Authorized"
+            analysis = "Trusted gateway"
         elif mac in BLOCKED_DEVICES:
-            name = "Unknown Device"
+            name = "Third-Party Device"
             status = "Blocked"
-            ai = "Blocked"
+            analysis = "Access blocked (demo)"
         else:
-            name = "Unknown Device"
+            name = "Third-Party Device"
             status = "Unauthorized"
-            ai = "Anomalous"
+            analysis = "Unknown device"
 
         devices.append({
             "name": name,
             "ip": ip,
             "mac": mac,
             "status": status,
-            "ai": ai
+            "analysis": analysis
+        })
+        seen_ips.add(ip)
+
+    # Some operating systems do not place the host itself in their ARP table.
+    if local_ip and local_ip not in seen_ips:
+        devices.insert(0, {
+            "name": "This Device",
+            "ip": local_ip,
+            "mac": get_local_mac(),
+            "status": "Authorized",
+            "analysis": "Trusted host"
         })
 
     return devices
 
 
+def dashboard_data(run_scan=False):
+    local_ip = get_local_ip()
+    gateway_ip = get_gateway_ip()
+    network = discover_network(local_ip) if run_scan else (
+        str(ipaddress.ip_network(f"{local_ip}/24", strict=False))
+        if local_ip else None
+    )
+
+    devices = build_device_list(local_ip, gateway_ip) if run_scan else []
+
+    authorized = sum(d["status"] == "Authorized" for d in devices)
+    unauthorized = sum(d["status"] == "Unauthorized" for d in devices)
+    blocked = sum(d["status"] == "Blocked" for d in devices)
+
+    return {
+        "devices": devices,
+        "local_ip": local_ip,
+        "gateway_ip": gateway_ip,
+        "network": network,
+        "authorized_count": authorized,
+        "unauthorized_count": unauthorized,
+        "blocked_count": blocked
+    }
+
+
 @app.route("/")
 def home():
-    return render_template(
-        "index.html",
-        devices=[],
-        network=None,
-        message=None
-    )
+    data = dashboard_data(run_scan=False)
+    return render_template("index.html", scanned=False, **data)
 
 
 @app.route("/scan")
 def scan():
-    network = discover_network()
-    devices = read_arp_devices()
-
-    if network:
-        message = (
-            f"Active scan completed for {network}. "
-            "Some hotspots may hide isolated clients."
-        )
-    else:
-        message = (
-            "Could not determine the local network. "
-            "Showing devices already present in the ARP table."
-        )
-
-    return render_template(
-        "index.html",
-        devices=devices,
-        network=network,
-        message=message
-    )
+    data = dashboard_data(run_scan=True)
+    return render_template("index.html", scanned=True, **data)
 
 
-@app.route("/block/<mac>", methods=["POST"])
-def block_device(mac):
+@app.route("/block/<mac>/<ip>", methods=["POST"])
+def block_device(mac, ip):
+    local_ip = get_local_ip()
+    gateway_ip = get_gateway_ip()
     mac = normalize_mac(mac)
 
-    # Never block a trusted device
-    if mac not in AUTHORIZED_DEVICES:
+    # The current host and the network gateway are always trusted.
+    if ip not in {local_ip, gateway_ip}:
         BLOCKED_DEVICES.add(mac)
 
     return redirect(url_for("scan"))
 
 
-# Run Flask using HTTPS
-app.run(debug=True, ssl_context="adhoc")
+@app.route("/unblock/<mac>", methods=["POST"])
+def unblock_device(mac):
+    BLOCKED_DEVICES.discard(normalize_mac(mac))
+    return redirect(url_for("scan"))
+
+
+if __name__ == "__main__":
+    app.run(debug=True, ssl_context="adhoc")
