@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, redirect, url_for
 import subprocess
 import re
 
@@ -6,6 +6,20 @@ app = Flask(__name__)
 
 # Your laptop's MAC address
 AUTHORIZED = "d2-f3-ab-41-6e-dc"
+
+# Devices blocked from the dashboard.
+# This is kept simple for the project and resets when Flask restarts.
+BLOCKED_DEVICES = set()
+
+
+def normalize_mac(mac):
+    raw_mac = mac.lower().replace("-", ":")
+    parts = raw_mac.split(":")
+
+    if len(parts) == 6:
+        return "-".join(part.zfill(2) for part in parts)
+
+    return raw_mac.replace(":", "-")
 
 
 @app.route("/")
@@ -33,14 +47,7 @@ def scan():
 
         if m:
             ip = m.group(1)
-            raw_mac = m.group(2).lower().replace("-", ":")
-            parts = raw_mac.split(":")
-
-            # Normalize MAC addresses to aa-bb-cc-dd-ee-ff format
-            if len(parts) == 6:
-                mac = "-".join(part.zfill(2) for part in parts)
-            else:
-                mac = raw_mac.replace(":", "-")
+            mac = normalize_mac(m.group(2))
 
             # Ignore broadcast and multicast addresses
             if ip.startswith(("224.", "239.", "255.")):
@@ -49,10 +56,13 @@ def scan():
             if mac == "ff-ff-ff-ff-ff-ff":
                 continue
 
-            # Check whether device is authorized
+            # Check whether device is authorized, blocked, or unauthorized
             if mac == AUTHORIZED:
                 status = "Authorized"
                 ai = "Normal"
+            elif mac in BLOCKED_DEVICES:
+                status = "Blocked"
+                ai = "Blocked"
             else:
                 status = "Unauthorized"
                 ai = "Anomalous"
@@ -65,6 +75,17 @@ def scan():
             })
 
     return render_template("index.html", devices=devices)
+
+
+@app.route("/block/<mac>", methods=["POST"])
+def block_device(mac):
+    mac = normalize_mac(mac)
+
+    # Never block the authorized device
+    if mac != AUTHORIZED:
+        BLOCKED_DEVICES.add(mac)
+
+    return redirect(url_for("scan"))
 
 
 # Run Flask using HTTPS
