@@ -4,8 +4,11 @@ import re
 
 app = Flask(__name__)
 
-# Your laptop's MAC address
-AUTHORIZED = "d2-f3-ab-41-6e-dc"
+# Trusted devices
+AUTHORIZED_DEVICES = {
+    "dc-a9-04-93-aa-73": "My MacBook",
+    "fa-4e-73-4e-d4-64": "Personal Hotspot"
+}
 
 # Devices blocked from the dashboard.
 # This is kept simple for the project and resets when Flask restarts.
@@ -57,17 +60,21 @@ def scan():
                 continue
 
             # Check whether device is authorized, blocked, or unauthorized
-            if mac == AUTHORIZED:
+            if mac in AUTHORIZED_DEVICES:
+                name = AUTHORIZED_DEVICES[mac]
                 status = "Authorized"
                 ai = "Normal"
             elif mac in BLOCKED_DEVICES:
+                name = "Unknown Device"
                 status = "Blocked"
                 ai = "Blocked"
             else:
+                name = "Unknown Device"
                 status = "Unauthorized"
                 ai = "Anomalous"
 
             devices.append({
+                "name": name,
                 "ip": ip,
                 "mac": mac,
                 "status": status,
@@ -81,8 +88,8 @@ def scan():
 def block_device(mac):
     mac = normalize_mac(mac)
 
-    # Never block the authorized device
-    if mac != AUTHORIZED:
+    # Never block a trusted device
+    if mac not in AUTHORIZED_DEVICES:
         BLOCKED_DEVICES.add(mac)
 
     return redirect(url_for("scan"))
