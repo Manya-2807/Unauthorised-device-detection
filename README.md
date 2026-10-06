@@ -1,29 +1,46 @@
 # Unauthorized Device Detection System
 
-A simple Flask-based network security project that scans devices visible on the local network and identifies whether each device is authorized or unauthorized using its MAC address.
+A simple Flask-based Computer Networks project that actively probes the local network, reads the ARP table, and classifies detected devices as authorized or unauthorized using their MAC addresses.
 
-## Project Overview
+## What the Project Does
 
-The application uses the system ARP table to detect devices connected to the local network. Each detected device is compared against a predefined authorized MAC address.
+When **Scan Network** is clicked:
 
-The result is displayed in a simple web dashboard showing:
+1. The app determines the Mac/PC's current local IP address.
+2. It actively probes the current /24 local subnet.
+3. The operating system learns reachable neighboring devices.
+4. The app reads the ARP table.
+5. Each MAC address is normalized.
+6. Known MAC addresses are marked **Authorized / Normal**.
+7. Other detected MAC addresses are marked **Unauthorized / Anomalous**.
+8. Unauthorized devices get a **Block** button.
 
-- IP Address
-- MAC Address
-- Authorization Status
-- Basic Analysis Result
+## Trusted Devices
 
-## How It Works
+Trusted devices are defined in `app.py`:
 
-1. The Flask application starts a local HTTPS web server.
-2. The user opens the dashboard in a browser.
-3. Clicking **Scan Network** runs the `arp -a` command.
-4. The program extracts IP and MAC addresses from the result.
-5. Broadcast and multicast addresses are ignored.
-6. Each device MAC address is compared with the authorized MAC address.
-7. The dashboard displays whether each device is:
-   - **Authorized / Normal**
-   - **Unauthorized / Anomalous**
+```python
+AUTHORIZED_DEVICES = {
+    "dc-a9-04-93-aa-73": "My MacBook",
+    "fa-4e-73-4e-d4-64": "Personal Hotspot"
+}
+```
+
+Add another known device by adding its normalized MAC address and a name.
+
+## Important Network Limitation
+
+The app can discover only devices that are visible from the computer running Flask.
+
+A normal Wi-Fi router/LAN usually allows much better local discovery.
+
+Some mobile hotspots, including Personal Hotspot configurations, can isolate connected clients from one another. In that case another phone may be connected to the hotspot but still remain invisible to the Mac. A Flask application running on the Mac cannot override that hotspot isolation.
+
+## About the Block Button
+
+The **Block** button currently marks the device as blocked inside the dashboard.
+
+It does not disconnect that device from the Wi-Fi network. Actual Wi-Fi disconnection requires administrative control of the router/access point or hotspot. The specific implementation depends on the router/hotspot platform.
 
 ## Project Structure
 
@@ -31,6 +48,7 @@ The result is displayed in a simple web dashboard showing:
 Unauthorised-device-detection/
 │
 ├── app.py
+├── README.md
 ├── requirements.txt
 └── templates/
     └── index.html
@@ -42,44 +60,36 @@ Unauthorised-device-detection/
 - Flask
 - pyOpenSSL
 
-Install the required packages using:
+Install:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Running the Project
-
-Run:
+## Run
 
 ```bash
-python app.py
+python3 app.py
 ```
 
-Flask will start the application using HTTPS.
+Then open:
 
-Open the local address shown in the terminal in your browser.
+```text
+https://127.0.0.1:5000
+```
 
-Because the project uses a self-signed development certificate, the browser may display a security warning when opening the page locally.
+A browser certificate warning is expected because the local Flask server uses a self-signed development certificate.
 
 ## Main Technologies
 
 - Python
 - Flask
 - HTML
-- ARP network discovery
+- ARP
+- ICMP/ping-based local discovery
 - Regular expressions
-
-## Important Note
-
-The authorized MAC address is currently defined directly inside `app.py`:
-
-```python
-AUTHORIZED = "d2-f3-ab-41-6e-dc"
-```
-
-Change this value if the system needs to recognize a different device as authorized.
+- MAC-address allowlisting
 
 ## Purpose
 
-This project is intended as a simple demonstration of local network device detection and basic unauthorized-device identification for a Computer Networks project.
+This project demonstrates local-network device discovery and simple allowlist-based unauthorized-device detection for a Computer Networks project.
