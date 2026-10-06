@@ -14,6 +14,10 @@
     <button type="submit">Scan Network</button>
 </form>
 
+{% if message %}
+<p><strong>{{ message }}</strong></p>
+{% endif %}
+
 <h2>Detected Devices</h2>
 
 <table border="1" cellpadding="10">
@@ -49,6 +53,13 @@
 {% endfor %}
 
 </table>
+
+<p>
+    <small>
+        Block marks an unauthorized device as blocked in this dashboard.
+        Disconnecting another device from Wi-Fi requires control of the router or hotspot.
+    </small>
+</p>
 
 </body>
 </html>
