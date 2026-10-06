@@ -23,6 +23,7 @@
     <th>MAC Address</th>
     <th>Status</th>
     <th>AI Analysis</th>
+    <th>Action</th>
 </tr>
 
 {% for device in devices %}
@@ -31,6 +32,17 @@
     <td>{{ device.mac }}</td>
     <td>{{ device.status }}</td>
     <td>{{ device.ai }}</td>
+    <td>
+        {% if device.status == "Unauthorized" %}
+        <form action="/block/{{ device.mac }}" method="post">
+            <button type="submit">Block</button>
+        </form>
+        {% elif device.status == "Blocked" %}
+        Blocked
+        {% else %}
+        -
+        {% endif %}
+    </td>
 </tr>
 {% endfor %}
 
