@@ -25,14 +25,22 @@ def scan():
 
     for line in result.splitlines():
 
+        # Supports both macOS and Windows ARP output
         m = re.search(
-            r"(\d+\.\d+\.\d+\.\d+)\s+([a-fA-F0-9-]{17})",
+            r"\(?(\d+\.\d+\.\d+\.\d+)\)?(?:\s+at)?\s+([a-fA-F0-9:-]{11,17})",
             line
         )
 
         if m:
             ip = m.group(1)
-            mac = m.group(2).lower()
+            raw_mac = m.group(2).lower().replace("-", ":")
+            parts = raw_mac.split(":")
+
+            # Normalize MAC addresses to aa-bb-cc-dd-ee-ff format
+            if len(parts) == 6:
+                mac = "-".join(part.zfill(2) for part in parts)
+            else:
+                mac = raw_mac.replace(":", "-")
 
             # Ignore broadcast and multicast addresses
             if ip.startswith(("224.", "239.", "255.")):
